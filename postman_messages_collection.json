@@ -1,0 +1,391 @@
+{
+  "info": {
+    "name": "Messages API - NNPTUD C4",
+    "_postman_id": "messages-api-collection",
+    "description": "Test collection cho 3 router messages:\n1. GET /api/v1/messages/:userID - Lấy toàn bộ tin nhắn giữa 2 user\n2. POST /api/v1/messages/:userID - Gửi tin nhắn (text hoặc file)\n3. GET /api/v1/messages/ - Lấy tin nhắn cuối cùng của mỗi cuộc trò chuyện",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string",
+      "description": "JWT token sau khi đăng nhập - tự động set sau khi chạy 'Login'"
+    },
+    {
+      "key": "target_user_id",
+      "value": "",
+      "type": "string",
+      "description": "UserID của người nhận - điền vào sau khi biết ID"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup - Auth",
+      "item": [
+        {
+          "name": "Login (lấy token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let token = pm.response.text();",
+                  "// Bỏ dấu ngoặc kép nếu response trả về string JSON",
+                  "token = token.replace(/\"/g, '').trim();",
+                  "pm.collectionVariables.set('token', token);",
+                  "console.log('Token saved:', token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"your_username\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Đăng nhập để lấy JWT token. Token sẽ tự động được lưu vào biến 'token'.\n\n⚠️ Thay username/password bằng tài khoản thực."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. GET /:userID - Lấy tất cả tin nhắn với 1 user",
+      "item": [
+        {
+          "name": "[PASS] Lấy tin nhắn với userID hợp lệ",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{target_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{target_user_id}}"]
+            },
+            "description": "Lấy toàn bộ tin nhắn giữa user hiện tại và target_user_id.\n\n✅ Expected: 200 - Mảng các message sắp xếp theo thứ tự thời gian tăng dần (createdAt: 1)\n\nResponse mẫu:\n[\n  {\n    \"_id\": \"...\",\n    \"from\": { \"_id\": \"...\", \"username\": \"...\", \"email\": \"...\", \"fullName\": \"...\", \"avatarUrl\": \"...\" },\n    \"to\": { ... },\n    \"messageContent\": { \"type\": \"text\", \"text\": \"Hello\" },\n    \"createdAt\": \"2024-03-28T10:00:00.000Z\"\n  }\n]\n\n⚠️ Điền target_user_id vào Collection Variables trước khi chạy."
+          }
+        },
+        {
+          "name": "[FAIL] userID không hợp lệ (sai format ObjectId)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/invalid_id_123",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "invalid_id_123"]
+            },
+            "description": "❌ Expected: 404 - { \"message\": \"user khong ton tai\" }\n\nTest case: UserID không đúng định dạng MongoDB ObjectId."
+          }
+        },
+        {
+          "name": "[FAIL] userID không tồn tại trong DB",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/000000000000000000000001",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "000000000000000000000001"]
+            },
+            "description": "❌ Expected: 404 - { \"message\": \"user khong ton tai\" }\n\nTest case: UserID đúng format ObjectId nhưng không có trong database."
+          }
+        },
+        {
+          "name": "[FAIL] Chưa đăng nhập (không có token)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{target_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{target_user_id}}"]
+            },
+            "description": "❌ Expected: 404 - { \"message\": \"ban chua dang nhap\" }\n\nTest case: Không gửi Authorization header."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. POST /:userID - Gửi tin nhắn",
+      "item": [
+        {
+          "name": "[PASS] Gửi tin nhắn TEXT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Xin chao! Day la tin nhan thu nghiem.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{target_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{target_user_id}}"]
+            },
+            "description": "✅ Expected: 200 - Tin nhắn vừa tạo với type='text'\n\nResponse mẫu:\n{\n  \"_id\": \"...\",\n  \"from\": { \"_id\": \"...\", \"username\": \"...\" },\n  \"to\": { \"_id\": \"...\", \"username\": \"...\" },\n  \"messageContent\": {\n    \"type\": \"text\",\n    \"text\": \"Xin chao! Day la tin nhan thu nghiem.\"\n  },\n  \"createdAt\": \"...\"\n}"
+          }
+        },
+        {
+          "name": "[PASS] Gửi tin nhắn FILE (upload file)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "⚠️ Chọn file bất kỳ từ máy tính của bạn (hình ảnh, PDF, v.v.)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{target_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{target_user_id}}"]
+            },
+            "description": "✅ Expected: 200 - Tin nhắn với type='file', text=path đến file\n\nResponse mẫu:\n{\n  \"messageContent\": {\n    \"type\": \"file\",\n    \"text\": \"/api/v1/upload/1711612345678-987654321.jpg\"\n  }\n}\n\n📌 Cách dùng trong Postman:\n- Chọn Body > form-data\n- Key: 'file', Type: File\n- Chọn file từ máy"
+          }
+        },
+        {
+          "name": "[FAIL] Nội dung rỗng (không có text và không có file)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{target_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{target_user_id}}"]
+            },
+            "description": "❌ Expected: 400 - { \"message\": \"noi dung tin nhan khong duoc de trong\" }"
+          }
+        },
+        {
+          "name": "[FAIL] Gửi tin nhắn cho chính mình",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Cần set my_user_id = ID của user đang đăng nhập",
+                  "// Lấy từ GET /api/v1/auth/me sau khi login"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Tu nhan tin cho chinh minh\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{my_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{my_user_id}}"]
+            },
+            "description": "❌ Expected: 400 - { \"message\": \"khong the gui tin nhan cho chinh minh\" }\n\n⚠️ Thêm biến my_user_id vào Collection Variables = ID của user đang login.\nLấy ID bằng cách gọi GET /api/v1/auth/me"
+          }
+        },
+        {
+          "name": "[FAIL] text chỉ có khoảng trắng",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"     \"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{target_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{target_user_id}}"]
+            },
+            "description": "❌ Expected: 400 - { \"message\": \"noi dung tin nhan khong duoc de trong\" }\n\nText chỉ có khoảng trắng, sau khi trim() sẽ thành rỗng."
+          }
+        },
+        {
+          "name": "[FAIL] Gửi cho userID không tồn tại",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/000000000000000000000001",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "000000000000000000000001"]
+            },
+            "description": "❌ Expected: 404 - { \"message\": \"user khong ton tai\" }"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. GET / - Lấy tin nhắn cuối cùng mỗi cuộc trò chuyện",
+      "item": [
+        {
+          "name": "[PASS] Lấy danh sách conversation (đã có tin nhắn)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "description": "✅ Expected: 200 - Mảng các object chứa user và lastMessage\n\nResponse mẫu:\n[\n  {\n    \"user\": {\n      \"_id\": \"...\",\n      \"username\": \"user_B\",\n      \"email\": \"b@example.com\",\n      \"fullName\": \"User B\",\n      \"avatarUrl\": \"...\"\n    },\n    \"lastMessage\": {\n      \"_id\": \"...\",\n      \"from\": { ... },\n      \"to\": { ... },\n      \"messageContent\": { \"type\": \"text\", \"text\": \"Tin nhắn cuối\" },\n      \"createdAt\": \"2024-03-28T10:00:00.000Z\"\n    }\n  }\n]\n\n📌 Mỗi phần tử = 1 người user đang trò chuyện + tin nhắn cuối cùng."
+          }
+        },
+        {
+          "name": "[PASS] Lấy conversation - user chưa nhắn tin với ai (trả về [])",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "description": "✅ Expected: 200 - [] (mảng rỗng)\n\nNếu user hiện tại chưa gửi hay nhận tin nhắn nào thì kết quả là mảng rỗng."
+          }
+        },
+        {
+          "name": "[FAIL] Chưa đăng nhập",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages"]
+            },
+            "description": "❌ Expected: 404 - { \"message\": \"ban chua dang nhap\" }"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Helper - Lấy thông tin user hiện tại (me)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/me",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "me"]
+        },
+        "description": "Lấy thông tin user hiện tại đang login.\nDùng để copy _id vào biến my_user_id và target_user_id."
+      }
+    }
+  ]
+}
